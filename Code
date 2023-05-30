@@ -1,0 +1,150 @@
+% Biological Reinforcement Learning Simulation for Parasitoid Behavior
+
+% Define parameters
+numEpisodes = 100;      % Number of episodes/iterations
+numMonths = 12;         % Number of months in the simulation
+numSteps = 30;          % Maximum number of steps per month
+alpha = 0.1;            % Learning rate
+gamma = 0.9;            % Discount factor
+
+% Initialize Q-tables for parasitoid and pest
+numStates = 10;         % Number of states
+numActions = 4;         % Number of actions (e.g., search, approach, attack, lay eggs)
+Q_parasitoid = zeros(numStates, numActions);   % Q-table for parasitoid
+Q_pest = zeros(numStates, numActions);         % Q-table for pest
+
+% Define reward and environmental matrices for each month
+rewardMatrix = cell(1, numMonths);               % Reward matrix for each month
+climaticMatrix = cell(1, numMonths);             % Climatic conditions for each month
+cropAvailabilityMatrix = cell(1, numMonths);     % Crop availability for each month
+
+% Populate reward, climatic, and crop availability matrices for each month
+for month = 1:numMonths
+    % Reward matrix for the month
+    rewardMatrix{month} = rand(numStates, numActions); % Example: Random rewards between 0 and 1
+    
+    % Climatic conditions for the month
+    climaticMatrix{month} = rand(numStates, numActions); % Example: Random climatic conditions between 0 and 1
+    
+    % Crop availability for the month
+    cropAvailabilityMatrix{month} = rand(numStates, numActions); % Example: Random crop availability between 0 and 1
+end
+
+% Initialize population arrays for parasitoid and pest
+parasitoidPopulation = zeros(numMonths*numSteps+1, 1);
+pestPopulation = zeros(numMonths*numSteps+1, 1);
+
+% Sensitivity analysis parameters
+parasitism_rate_values = linspace(0.01, 0.05, 5);  % Parasitism rate values to test
+
+% Run the sensitivity analysis
+sensitivity_analysis_results_parasitoid = zeros(numMonths*numSteps+1, numel(parasitism_rate_values));
+sensitivity_analysis_results_pest = zeros(numMonths*numSteps+1, numel(parasitism_rate_values));
+
+for i = 1:numel(parasitism_rate_values)
+    parasitism_rate = parasitism_rate_values(i);
+    
+    for episode = 1:numEpisodes
+        % Initialize the environment for each month
+        currentState = 1;
+
+        for month = 1:numMonths
+            % Initialize populations for the parasitoid and pest
+            parasitoidPopulation((month-1)*numSteps + 1) = 145;    % Initial parasitoid population
+            pestPopulation((month-1)*numSteps + 1) = 500;          % Initial pest population
+
+            % Run the simulation for the month
+            for step = 1:numSteps
+                % Choose action using epsilon-greedy policy for the parasitoid
+                epsilon = 0.1;  % Exploration vs. exploitation trade-off
+                if rand < epsilon
+                    % Explore (random action)
+                    action_parasitoid = randi(numActions);
+                else
+                    % Exploit (select action with maximum Q-value)
+                    [~, action_parasitoid] = max(Q_parasitoid(currentState, :));
+                end
+
+                % Choose action using epsilon-greedy policy for the pest
+                epsilon = 0.1;  % Exploration vs. exploitation trade-off
+                if rand < epsilon
+                    % Explore (random action)
+                    action_pest = randi(numActions);
+                else
+                    % Exploit (select action with maximum Q-value)
+                    [~, action_pest] = max(Q_pest(currentState, :));
+                end
+
+                % Execute actions and observe the next state and rewards
+                nextState = action_parasitoid;  % For simplicity, assuming next state is the action chosen
+                reward_parasitoid = rewardMatrix{month}(currentState, action_parasitoid) * climaticMatrix{month}(currentState, action_parasitoid) * cropAvailabilityMatrix{month}(currentState, action_parasitoid);
+
+                nextState = action_pest;  % For simplicity, assuming next state is the action chosen
+                reward_pest = rewardMatrix{month}(currentState, action_pest) * climaticMatrix{month}(currentState, action_pest) * cropAvailabilityMatrix{month}(currentState, action_pest);
+
+                % Update Q-tables for parasitoid and pest
+                Q_parasitoid(currentState, action_parasitoid) = Q_parasitoid(currentState, action_parasitoid) + alpha * (reward_parasitoid + gamma * max(Q_parasitoid(nextState, :)) - Q_parasitoid(currentState, action_parasitoid));
+
+                Q_pest(currentState, action_pest) = Q_pest(currentState, action_pest) + alpha * (reward_pest + gamma * max(Q_pest(nextState, :)) - Q_pest(currentState, action_pest));
+
+                % Update parasitoid and pest populations based on parasitism and growth rates
+                growth_rate_parasitoid = 0.5; % Growth rate for parasitoid (adjust as desired)
+                growth_rate_pest = 0.4; % Growth rate for pest (adjust as desired)
+                death_rate_parasitoid = 0.02; % Death rate for parasitoid (adjust as desired)
+                death_rate_pest = 0.05; % Death rate for pest (adjust as desired)
+
+                parasitoidPopulation((month-1)*numSteps + step + 1) = max(parasitoidPopulation((month-1)*numSteps + step) - pestPopulation((month-1)*numSteps + step) * parasitism_rate + parasitoidPopulation((month-1)*numSteps + step) * growth_rate_parasitoid - parasitoidPopulation((month-1)*numSteps + step) * death_rate_parasitoid, 0);
+                pestPopulation((month-1)*numSteps + step + 1) = max(pestPopulation((month-1)*numSteps + step) + pestPopulation((month-1)*numSteps + step) * growth_rate_pest - pestPopulation((month-1)*numSteps + step) * parasitism_rate - pestPopulation((month-1)*numSteps + step) * death_rate_pest, 0);
+
+                % Move to the next state
+                currentState = nextState;
+            end
+        end
+
+        % Store population results for sensitivity analysis
+        sensitivity_analysis_results_parasitoid(:, i) = sensitivity_analysis_results_parasitoid(:, i) + parasitoidPopulation;
+        sensitivity_analysis_results_pest(:, i) = sensitivity_analysis_results_pest(:, i) + pestPopulation;
+    end
+end
+
+% Calculate average results for sensitivity analysis
+sensitivity_analysis_results_parasitoid = sensitivity_analysis_results_parasitoid ./ numEpisodes;
+sensitivity_analysis_results_pest = sensitivity_analysis_results_pest ./ numEpisodes;
+
+% Create figure
+figure('units','normalized','outerposition',[0 0 1 1]);
+
+% Plot population dynamics using curves
+time = 1:numMonths*numSteps+1;
+subplot(2, 2, 1);
+plot(time, smooth(parasitoidPopulation, 0.1, 'loess'), 'b-', 'LineWidth', 2);
+hold on;
+plot(time, smooth(pestPopulation, 0.1, 'loess'), 'r-', 'LineWidth', 2);
+xlim([0 300]); % Set x-axis limit
+xlabel('Time (Steps)');
+ylabel('Population');
+title('(a) Parasitoid and Pest Population Dynamics');
+legend('Parasitoid', 'Pest');
+
+subplot(2, 2, 2);
+plot(smooth(parasitoidPopulation, 0.1, 'loess'), smooth(pestPopulation, 0.1, 'loess'), 'k-', 'LineWidth', 2);
+xlabel('Parasitoid Population');
+ylabel('Pest Population');
+title('(b) Phase Plot: Parasitoid vs. Pest');
+
+subplot(2, 2, 3);
+sensitivity_plot_pest = surf(parasitism_rate_values, time(1:300), sensitivity_analysis_results_pest(1:300,:));
+xlabel('Parasitism Rate');
+ylabel('Time (Steps)');
+zlabel('Pest Population');
+title('(c) Sensitivity Analysis: Pest Population vs. Parasitism Rate');
+
+subplot(2, 2, 4);
+sensitivity_plot_parasitoid = surf(parasitism_rate_values, time(1:300), sensitivity_analysis_results_parasitoid(1:300,:));
+xlabel('Parasitism Rate');
+ylabel('Time (Steps)');
+zlabel('Parasitoid Population');
+title('(d) Sensitivity Analysis: Parasitoid Population vs. Parasitism Rate');
+
+% Save the figure
+print('C:\Users\USER\Desktop\Article non published\figure','-dpng','-r1300');
